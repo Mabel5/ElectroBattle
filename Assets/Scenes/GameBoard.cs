@@ -15,6 +15,7 @@ public class GameBoard : MonoBehaviour
     public Material selectedMat;
     public Material standardMat;
     public Material aoeMat;
+    public Material moveMat;
     TurnOptions turnType;
 
     public ArrayList friendlies;
@@ -26,6 +27,13 @@ public class GameBoard : MonoBehaviour
 
     public int rows = 5;
     public int cols = 5;
+
+    int numberOfKills = 0;
+    public Text kills;
+    public Text aiKills;
+    public Text AIText;
+    public Text winText;
+    public Text loseText;
 
     //option buttons
     public Button m_Move, m_Attack, m_Place;
@@ -73,11 +81,23 @@ public class GameBoard : MonoBehaviour
                 if (tile.getUnit() != null)
                 {
                     Destroy(tile.getUnit().gameObject);
+
+                    if (enemies.Contains(tile))
+                    {
+                        enemies.Remove(tile);
+                        numberOfKills += 1;
+                    }
+
+                    if (friendlies.Contains(tile)) {
+                        enemies.Remove(tile);
+                        numberOfKills -= 1;
+                    }
+
                     tile.setUnit(null);
                 }
             }
         }
-
+        turn = !turn;
         this.SetTurn(TurnOptions.None);
     }
 
@@ -91,7 +111,10 @@ public class GameBoard : MonoBehaviour
     {
 
         UnitAoECheck();
-        mouseToBoard();
+        if (turnType != TurnOptions.Move)
+        {
+            mouseToBoard();
+        }
 
 
         if (turnType != TurnOptions.None)
@@ -100,19 +123,58 @@ public class GameBoard : MonoBehaviour
                 case TurnOptions.Place:
                     mouseToSelect();
                     break;
-                case TurnOptions.Attack:
-                    break;
                 case TurnOptions.Move:
+                    Move(currentSelected);
                     break;
                 default:
                     break;
             }
-        } 
+        }
 
         if (turn != true) {
             turnType = TurnOptions.None;
-            ai.makeMove(tiles);
+            int enemyTurnType = UnityEngine.Random.Range(0, 3);
+            if (enemyTurnType == 0 && enemies.Count > 0) //move
+            {
+                if ((friendlies.Count + enemies.Count) != (cols * rows))
+                {
+                    AIText.text = "The AI Moved";
+                    ai.movePiece();
+                }
+            } 
+            else if (enemyTurnType == 1 && enemies.Count > 0) //attack
+            {
+                AIText.text = "The AI Attacked";
+                ai.Attack();
+            } 
+            else if (enemyTurnType == 2)
+            {
+                AIText.text = "The AI Placed An Enemy";
+                ai.makeMove(tiles);
+            }
+            else //place
+            {
+                AIText.text = "The AI Placed An Enemy";
+                ai.makeMove(tiles);
+            }
+
         }
+
+        if (numberOfKills >= 10)
+        {
+            winText.enabled = true;
+        }
+        else if (numberOfKills >= 10 && ai.numberOfKills >= 10)
+        {
+            winText.enabled = true;
+        } 
+        else if (ai.numberOfKills >= 10 && numberOfKills < 10)
+        {
+            loseText.enabled = true;
+        }
+
+        aiKills.text = "AI Kills: " + ai.numberOfKills;
+        kills.text = "Personal Kills: " + numberOfKills;
     }
 
     Tile[,] initBoardState()
@@ -169,6 +231,75 @@ public class GameBoard : MonoBehaviour
 
 
             }
+
+        }
+    }
+
+    void Move(Tile tile)
+    {
+        if (tile.getUnit() != null)
+        {
+            Ray cameraRay = Camera.main.ScreenPointToRay(Input.mousePosition);
+
+            int layerMask = LayerMask.GetMask("Tile");
+
+            RaycastHit hit = new RaycastHit();
+            Tile moveTarget = null;
+
+            ArrayList neighbors = this.getNeighbors(tile);
+
+            foreach (Tile t in neighbors)
+            {
+                if (t.getUnit() == null)
+                {
+                    t.setMat(moveMat);
+                }
+            }
+
+            //raycast from the mouse cursor to the plane
+            if (Physics.Raycast(cameraRay, out hit, Mathf.Infinity, layerMask))
+            {
+                Transform prefab = tile.getUnit().prefab;
+
+                if (Input.GetMouseButtonDown(0))
+                {
+                    moveTarget = hit.transform.GetComponent<Tile>();
+
+                    bool isPossibleMove = false;
+                    
+                    foreach (Tile t in neighbors)
+                    {
+                        if (moveTarget == t && t.getUnit() == null)
+                        { 
+                            isPossibleMove = true;
+                            break;
+                        }
+                    }
+
+                    if (moveTarget.getUnit() == null && isPossibleMove)
+                    {
+                        Destroy(tile.getUnit().gameObject);
+                        friendlies.Remove(tile);
+                        tile.setUnit(null);
+                        tile.setMat(standardMat);
+                        currentSelected = moveTarget;
+                        spawnUnit(prefab);
+                        currentSelected.setMat(selectedMat);
+                        turnType = TurnOptions.None;
+
+                    }
+
+                    foreach (Tile t in neighbors)
+                    {
+                        t.setMat(standardMat);
+                    }
+                    UnitAoECheck();
+                    mouseToBoard();
+
+
+
+                }
+            }
         }
     }
 
@@ -218,7 +349,7 @@ public class GameBoard : MonoBehaviour
         {
             Transform unit = Instantiate(unitPrefab, new Vector3(currentSelected.getX(), unitPrefab.position.y, currentSelected.getY()), Quaternion.identity);
             currentSelected.setUnit(unit.GetComponent<Unit>());
-            friendlies.Add(unit);
+            friendlies.Add(currentSelected);
             turn = !turn;
         }
 
@@ -230,7 +361,7 @@ public class GameBoard : MonoBehaviour
             rot = new Vector3(rot.x, rot.y + 180, rot.z);
             unit.rotation = Quaternion.Euler(rot);
             ai.tile.setUnit(unit.GetComponent<Unit>());
-            enemies.Add(unit);
+            enemies.Add(ai.tile);
             turn = !turn;
         }
 
@@ -306,17 +437,47 @@ public class GameBoard : MonoBehaviour
         }
     }
 
-    public void Move() { 
-
-    }
-
-    public void Attack(Unit unit)
+    public ArrayList getNeighbors(Tile t)
     {
+        ArrayList neighbors = new ArrayList();
 
+        int x = t.getX();
+        int y = t.getY();
+
+        try {
+            neighbors.Add(tiles[x - 1, y + 1]);
+        }
+        catch (IndexOutOfRangeException) { }
+        try {
+            neighbors.Add(tiles[x, y + 1]);
+        }
+        catch (IndexOutOfRangeException) { }
+        try { 
+        neighbors.Add(tiles[x + 1, y + 1]);
+        }
+        catch (IndexOutOfRangeException) { }
+        try { 
+        neighbors.Add(tiles[x - 1, y]);
+        }
+        catch (IndexOutOfRangeException) { }
+        try { 
+        neighbors.Add(tiles[x + 1, y]);
+        }
+        catch (IndexOutOfRangeException) { }
+        try { 
+        neighbors.Add(tiles[x - 1, y - 1]);
+        }
+        catch (IndexOutOfRangeException) { }
+        try { 
+        neighbors.Add(tiles[x, y - 1]);
+        }
+        catch (IndexOutOfRangeException) { }
+        try { 
+        neighbors.Add(tiles[x + 1, y - 1]);
+        }
+        catch (IndexOutOfRangeException) { }
+
+        return neighbors;
     }
 
-    public void Place()
-    {
-
-    }
 }

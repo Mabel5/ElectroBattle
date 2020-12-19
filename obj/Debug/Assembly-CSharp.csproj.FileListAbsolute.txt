@@ -1,0 +1,2 @@
+C:\Users\matth\ElectroBattle\obj\Debug\Assembly-CSharp.csprojAssemblyReference.cache
+C:\Users\matth\ElectroBattle\obj\Debug\Assembly-CSharp.csproj.CoreCompileInputs.cache
